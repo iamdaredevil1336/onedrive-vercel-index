@@ -19,12 +19,6 @@ import FourOhFour from '../FourOhFour'
 import Loading from '../Loading'
 import CustomEmbedLinkMenu from '../CustomEmbedLinkMenu'
 
-import dynamic from 'next/dynamic';
-
-const Plyr = dynamic(() => import('plyr'), {
-  ssr: false,
-});
-
 const VideoPlayer: FC<{
   videoName: string
   videoUrl: string
