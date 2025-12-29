@@ -11,6 +11,12 @@ import { DownloadBtnContainer, PreviewContainer } from './Containers'
 import { LoadingIcon } from '../Loading'
 import { formatModifiedDateTime } from '../../utils/fileDetails'
 import { getStoredToken } from '../../utils/protectedRouteHandler'
+import dynamic from 'next/dynamic';
+
+const Plyr = dynamic(() => import('plyr'), {
+  ssr: false,
+});
+
 
 enum PlayerState {
   Loading,
