@@ -31,10 +31,10 @@ export default function Home() {
   )
 }
 
-export async function getServerSideProps({ locale }: { locale?: string }) {
+export async function getServerSideProps({ locale }) {
   return {
     props: {
-      ...(await serverSideTranslations(locale ?? 'en', ['common'])),
+      ...(await serverSideTranslations(locale, ['common'])),
     },
   }
 }
