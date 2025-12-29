@@ -56,7 +56,12 @@ export async function requestTokenWithAuthCode(
   | { error: string; errorDescription: string; errorUri: string }
 > {
   const { clientId, redirectUri, authApi } = apiConfig
-  const clientSecret = revealObfuscatedToken(apiConfig.obfuscatedClientSecret)
+  const clientSecret = apiConfig.obfuscatedClientSecret
+
+if (!clientSecret) {
+  throw new Error('CLIENT_SECRET is missing in environment variables')
+}
+
 
   // Construct URL parameters for OAuth2
   const params = new URLSearchParams()
