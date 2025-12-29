@@ -1,6 +1,6 @@
 import type { OdFileObject } from '../../types'
 
-import { FC, useEffect, useState } from 'react'
+import { FC, useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { useTranslation } from 'next-i18next'
 
@@ -22,79 +22,66 @@ import CustomEmbedLinkMenu from '../CustomEmbedLinkMenu'
 const VideoPlayer: FC<{
   videoName: string
   videoUrl: string
-  width?: number
-  height?: number
   thumbnail: string
   subtitle: string
   isFlv: boolean
   mpegts: any
-}> = ({ videoName, videoUrl, width, height, thumbnail, subtitle, isFlv, mpegts }) => {
+}> = ({ videoUrl, thumbnail, subtitle, isFlv, mpegts }) => {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
   useEffect(() => {
-    // Really really hacky way to inject subtitles as file blobs into the video element
+    // Load subtitles
     axios
       .get(subtitle, { responseType: 'blob' })
       .then(resp => {
-        const track = document.querySelector('track')
-        track?.setAttribute('src', URL.createObjectURL(resp.data))
+        const track = videoRef.current?.querySelector('track')
+        if (track) {
+          track.src = URL.createObjectURL(resp.data)
+        }
       })
-      .catch(() => {
-        console.log('Could not load subtitle.')
-      })
+      .catch(() => console.log('Could not load subtitle.'))
 
-    if (isFlv) {
-      const loadFlv = () => {
-        // Really hacky way to get the exposed video element from Plyr
-        const video = document.getElementById('plyr')
-        const flv = mpegts.createPlayer({ url: videoUrl, type: 'flv' })
-        flv.attachMediaElement(video)
-        flv.load()
-      }
-      loadFlv()
+    // Load FLV using mpegts.js
+    if (isFlv && mpegts && videoRef.current) {
+      const flvPlayer = mpegts.createPlayer({
+        type: 'flv',
+        url: videoUrl,
+      })
+      flvPlayer.attachMediaElement(videoRef.current)
+      flvPlayer.load()
     }
   }, [videoUrl, isFlv, mpegts, subtitle])
 
-  // Common plyr configs, including the video source and plyr options
-  const plyrSource = {
-    type: 'video',
-    title: videoName,
-    poster: thumbnail,
-    tracks: [{ kind: 'captions', label: videoName, src: '', default: true }],
-  }
-  const plyrOptions: Plyr.Options = {
-    ratio: `${width ?? 16}:${height ?? 9}`,
-    fullscreen: { iosNative: true },
-  }
-  if (!isFlv) {
-    // If the video is not in flv format, we can use the native plyr and add sources directly with the video URL
-    plyrSource['sources'] = [{ src: videoUrl }]
-  }
-  return <Plyr id="plyr" source={plyrSource as Plyr.SourceInfo} options={plyrOptions} />
+  return (
+    <video
+      ref={videoRef}
+      className="w-full max-h-[70vh] rounded"
+      poster={thumbnail}
+      controls
+      preload="metadata"
+    >
+      <track kind="captions" label="Subtitle" default />
+    </video>
+  )
 }
 
 const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
   const { asPath } = useRouter()
   const hashedToken = getStoredToken(asPath)
   const clipboard = useClipboard()
-
-  const [menuOpen, setMenuOpen] = useState(false)
   const { t } = useTranslation()
 
-  // OneDrive generates thumbnails for its video files, we pick the thumbnail with the highest resolution
-  const thumbnail = `/api/thumbnail/?path=${asPath}&size=large${hashedToken ? `&odpt=${hashedToken}` : ''}`
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  // We assume subtitle files are beside the video with the same name, only webvtt '.vtt' files are supported
+  const thumbnail = `/api/thumbnail/?path=${asPath}&size=large${hashedToken ? `&odpt=${hashedToken}` : ''}`
+  const videoUrl = `/api/raw/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`
+
   const vtt = `${asPath.substring(0, asPath.lastIndexOf('.'))}.vtt`
   const subtitle = `/api/raw/?path=${vtt}${hashedToken ? `&odpt=${hashedToken}` : ''}`
 
-  // We also format the raw video file for the in-browser player as well as all other players
-  const videoUrl = `/api/raw/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`
-
   const isFlv = getExtension(file.name) === 'flv'
-  const {
-    loading,
-    error,
-    result: mpegts,
-  } = useAsync(async () => {
+
+  const { loading, error, result: mpegts } = useAsync(async () => {
     if (isFlv) {
       return (await import('mpegts.js')).default
     }
@@ -103,6 +90,7 @@ const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
   return (
     <>
       <CustomEmbedLinkMenu path={asPath} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+
       <PreviewContainer>
         {error ? (
           <FourOhFour errorMsg={error.message} />
@@ -112,8 +100,6 @@ const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
           <VideoPlayer
             videoName={file.name}
             videoUrl={videoUrl}
-            width={file.video?.width}
-            height={file.video?.height}
             thumbnail={thumbnail}
             subtitle={subtitle}
             isFlv={isFlv}
@@ -132,7 +118,7 @@ const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
           />
           <DownloadButton
             onClickCallback={() => {
-              clipboard.copy(`${getBaseUrl()}/api/raw/?path=${asPath}${hashedToken ? `&odpt=${hashedToken}` : ''}`)
+              clipboard.copy(`${getBaseUrl()}${videoUrl}`)
               toast.success(t('Copied direct link to clipboard.'))
             }}
             btnColor="pink"
@@ -144,27 +130,6 @@ const VideoPreview: FC<{ file: OdFileObject }> = ({ file }) => {
             btnColor="teal"
             btnText={t('Customise link')}
             btnIcon="pen"
-          />
-
-          <DownloadButton
-            onClickCallback={() => window.open(`iina://weblink?url=${getBaseUrl()}${videoUrl}`)}
-            btnText="IINA"
-            btnImage="/players/iina.png"
-          />
-          <DownloadButton
-            onClickCallback={() => window.open(`vlc://${getBaseUrl()}${videoUrl}`)}
-            btnText="VLC"
-            btnImage="/players/vlc.png"
-          />
-          <DownloadButton
-            onClickCallback={() => window.open(`potplayer://${getBaseUrl()}${videoUrl}`)}
-            btnText="PotPlayer"
-            btnImage="/players/potplayer.png"
-          />
-          <DownloadButton
-            onClickCallback={() => window.open(`nplayer-http://${window?.location.hostname ?? ''}${videoUrl}`)}
-            btnText="nPlayer"
-            btnImage="/players/nplayer.png"
           />
         </div>
       </DownloadBtnContainer>
